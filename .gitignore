@@ -1,0 +1,13 @@
+# Віртуальне середовище
+.venv/
+venv/
+env/
+
+# Локальна база даних
+*.db
+*.sqlite3
+
+# Кеш Python
+__pycache__/
+*.pyc
+*.pyo
