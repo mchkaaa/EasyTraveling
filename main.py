@@ -3,6 +3,10 @@ from views.login_view import get_login_view
 from views.register_view import get_register_view
 from views.planner_view import get_planner_view
 from database import init_db
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def main(page: ft.Page):
     init_db()
