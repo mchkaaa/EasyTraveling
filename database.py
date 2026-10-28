@@ -79,3 +79,15 @@ def verify_user(email, password):
         return user_id  # Успіх! Повертаємо id користувача
     else:
         return None     # Пароль не підійшов
+
+def check_email_exists(email):
+    """Перевіряє, чи вже є такий email у базі"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE email = ?", (email,))
+    
+    # Якщо fetchone() щось знайшов, exists буде True, якщо порожньо — False
+    exists = cursor.fetchone() is not None 
+    conn.close()
+    
+    return exists

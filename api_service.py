@@ -78,3 +78,14 @@ def search_flights(origin, destination, date):
         return "\n".join(results)
         
     return "Сталася помилка при обробці даних від сервера."
+
+def check_city_exists(city_name):
+    """Перевіряє чи існує місто через Open-Meteo та повертає його правильну назву"""
+    url = f"https://geocoding-api.open-meteo.com/v1/search?name={city_name}&language=uk&count=1"
+    try:
+        response = requests.get(url, timeout=3).json()
+        if "results" in response:
+            return response["results"][0].get("name", city_name)
+        return False
+    except Exception:
+        return False

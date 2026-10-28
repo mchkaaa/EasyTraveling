@@ -22,21 +22,18 @@ def get_login_view(page: ft.Page):
         elif not re.search(r"[!@#$%^&*(),.?\":{}|<>]", pass_field.value):
             pass_field.error_text = "Додайте хоча б один спецсимвол (!@#$% та ін.)"
         else:
-                # Викликаємо нашого детектива з бази даних
+            # Викликаємо нашого детектива з бази даних
             user_id = verify_user(email_field.value, pass_field.value)
                 
             if user_id:
-                    # Успіх! Запам'ятовуємо id користувача у спеціальній пам'яті Flet
-                page.session.set("user_id", user_id)
-                    
-                    # Переходимо в планувальник
+                # Успіх! Зберігаємо id ПЕРМАНЕНТНО на комп'ютері
+                page.client_storage.set("user_id", user_id)
                 page.go("/planner")
             else:
-                    # Помилка: пароль не підійшов або такого email немає
+                # Помилка: пароль не підійшов або такого email немає
                 email_field.error_text = "Неправильний email або пароль"
-                pass_field.error_text = "" # Можна додати й сюди, якщо хочеш
             
-            page.update()
+        page.update()
 
     return ft.View(
         route="/login",
