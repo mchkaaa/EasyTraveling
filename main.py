@@ -2,6 +2,7 @@ import flet as ft
 from views.login_view import get_login_view
 from views.register_view import get_register_view
 from views.planner_view import get_planner_view
+from views.trips_view import get_trips_view
 from database import init_db
 import os
 from dotenv import load_dotenv
@@ -29,6 +30,8 @@ def main(page: ft.Page):
         if not is_logged_in and page.route == "/planner":
             page.go("/login")
             return
+        if page.route == "/trips":
+            page.views.append(get_trips_view(page))
 
         # 3. Якщо все добре, просто показуємо потрібну сторінку
         if page.route == "/login":

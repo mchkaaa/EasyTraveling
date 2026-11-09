@@ -1,86 +1,106 @@
 import os
 import requests
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Допоміжна функція для отримання внутрішніх ID аеропортів
-def get_airport_ids(airport_code):
-    api_key = os.getenv("RAPIDAPI_KEY")
-    url = "https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchAirport"
-    querystring = {"query": airport_code}
-    headers = {
-        "x-rapidapi-key": api_key,
-        "x-rapidapi-host": "sky-scrapper.p.rapidapi.com"
+# --- СУПЕР-ФУНКЦІЯ: Безкоштовний пошук IATA-кодів (Без лімітів і ключів) ---
+# --- ОНОВЛЕНА ФУНКЦІЯ: Шукає конкретні аеропорти (FCO, MXP), а не загальні міста ---
+def get_location_id(city_name):
+    url = "https://autocomplete.travelpayouts.com/places2"
+    
+    # Крок 1: Спочатку шукаємо конкретний АЕРОПОРТ
+    params_airport = {
+        "term": city_name,
+        "locale": "uk",
+        "types[]": "airport"
     }
-    
-    response = requests.get(url, headers=headers, params=querystring)
-    data = response.json()
-    
-    if data.get("status") and data.get("data"):
-        first_result = data["data"][0]
-        # Дістаємо потрібні значення з глибини словника
-        flight_params = first_result.get("navigation", {}).get("relevantFlightParams", {})
-        return flight_params.get("skyId"), flight_params.get("entityId")
-    
-    return None, None
+    try:
+        response = requests.get(url, params=params_airport, timeout=5).json()
+        if response and len(response) > 0:
+            code = response[0].get("code").upper()
+            print(f"🌍 Знайдено аеропорт для {city_name}: {code}")
+            return code
+            
+        # Крок 2: Якщо прямого аеропорту немає, беремо код МІСТА як запасний варіант
+        params_city = {
+            "term": city_name,
+            "locale": "uk",
+            "types[]": "city"
+        }
+        response_city = requests.get(url, params=params_city, timeout=5).json()
+        if response_city and len(response_city) > 0:
+            code = response_city[0].get("code").upper()
+            print(f"🌍 Знайдено місто для {city_name}: {code}")
+            return code
+            
+    except Exception as e:
+        print(f"Помилка TravelPayouts для {city_name}: {e}")
+    return None
+
+def get_one_way_flights(origin_id, dest_id, date, api_key):
+    url = "https://serpapi.com/search"
+    params = {
+        "engine": "google_flights",
+        "departure_id": origin_id,     
+        "arrival_id": dest_id,         
+        "outbound_date": date,
+        "type": "2", # ВАЖЛИВО: 2 означає пошук квитка ТІЛЬКИ в один бік
+        "currency": "EUR",
+        "hl": "uk",
+        "api_key": api_key
+    }
+    try:
+        response = requests.get(url, params=params).json()
+        flights = response.get("best_flights", []) + response.get("other_flights", [])
+        flights.sort(key=lambda x: x.get("price", 999999))
+        
+        formatted = []
+        for f in flights[:5]: # Беремо 5 варіантів
+            price = f.get("price", "Немає ціни")
+            if f.get("flights"):
+                airline = f["flights"][0].get("airline", "Невідома а/к")
+                dep = f["flights"][0].get("departure_airport", {}).get("time", "")[-5:]
+                arr = f["flights"][0].get("arrival_airport", {}).get("time", "")[-5:]
+                formatted.append(f"• {airline}: {dep} - {arr} | {price}€")
+        return formatted
+    except Exception:
+        return []
 
 def search_flights(origin, destination, date):
-    api_key = os.getenv("RAPIDAPI_KEY")
+    api_key = os.getenv("SERPAPI_KEY")
     if not api_key:
-        return "API ключ не знайдено"
+        return "API ключ SerpApi не знайдено."
 
-    # Крок 1. Дістаємо внутрішні коди (entityId) для обох міст
-    origin_sky, origin_entity = get_airport_ids(origin)
-    dest_sky, dest_entity = get_airport_ids(destination)
+    origin_id = get_location_id(origin)
+    dest_id = get_location_id(destination)
 
-    if not origin_entity or not dest_entity:
-        return f"Не вдалося знайти внутрішні коди для аеропортів {origin} або {destination}."
+    if not origin_id or not dest_id:
+        return f"Не вдалося знайти аеропорти для {origin} або {destination}."
 
-    # Крок 2. Шукаємо квитки з правильними параметрами
-    url = "https://sky-scrapper.p.rapidapi.com/api/v1/flights/searchFlights"
-    querystring = {
-        "originSkyId": origin_sky,
-        "destinationSkyId": dest_sky,
-        "originEntityId": origin_entity,
-        "destinationEntityId": dest_entity,
-        "date": date,
-        "cabinClass": "economy",
-        "adults": "1"
-    }
-    headers = {
-        "x-rapidapi-key": api_key,
-        "x-rapidapi-host": "sky-scrapper.p.rapidapi.com"
-    }
+    try:
+        dates = re.findall(r'\d{2}\.\d{2}\.\d{4}', date)
+        if len(dates) >= 2:
+            outbound_date = f"{dates[0][6:10]}-{dates[0][3:5]}-{dates[0][0:2]}"
+            return_date = f"{dates[1][6:10]}-{dates[1][3:5]}-{dates[1][0:2]}"
+        else:
+            raise ValueError("Немає двох дат")
+    except:
+        outbound_date, return_date = "2026-12-15", "2026-12-20"
+
+    # Робимо два окремі пошуки!
+    outbound_results = get_one_way_flights(origin_id, dest_id, outbound_date, api_key)
+    return_results = get_one_way_flights(dest_id, origin_id, return_date, api_key)
+
+    final_text = f"Квитки ({origin} <-> {destination}):\n"
+    final_text += "ТУДИ:\n" + ("\n".join(outbound_results) if outbound_results else "Не знайдено") + "\n"
+    final_text += "НАЗАД:\n" + ("\n".join(return_results) if return_results else "Не знайдено")
     
-    response = requests.get(url, headers=headers, params=querystring)
-    data = response.json()
-    
-    # Крок 3. Красиво обробляємо відповідь сервера
-    if data.get("status") and "data" in data:
-        itineraries = data["data"].get("itineraries", [])
-        
-        if not itineraries:
-            return f"✈️ На жаль, рейсів {origin} -> {destination} на обрану дату не знайдено. Спробуй змінити день."
-            
-        # Якщо рейси є, беремо перші 3 найдешевші
-        results = ["Знайдені авіаквитки:"]
-        for flight in itineraries[:3]:
-            price = flight.get("price", {}).get("formatted", "Немає ціни")
-            legs = flight.get("legs", [])
-            if legs:
-                airline = legs[0].get("carriers", {}).get("marketing", [{}])[0].get("name", "Невідома а/к")
-                dep_time = legs[0].get("departure", "")[-8:-3] # беремо лише час (години:хвилини)
-                arr_time = legs[0].get("arrival", "")[-8:-3]
-                
-                results.append(f"• {airline}: {dep_time} - {arr_time} | {price}")
-                
-        return "\n".join(results)
-        
-    return "Сталася помилка при обробці даних від сервера."
+    print("========== ДАНІ ВІД GOOGLE FLIGHTS ==========\n" + final_text + "\n=============================================")
+    return final_text
 
 def check_city_exists(city_name):
-    """Перевіряє чи існує місто через Open-Meteo та повертає його правильну назву"""
     url = f"https://geocoding-api.open-meteo.com/v1/search?name={city_name}&language=uk&count=1"
     try:
         response = requests.get(url, timeout=3).json()

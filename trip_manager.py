@@ -1,38 +1,87 @@
 import os
 import json
-from google import genai
 from dotenv import load_dotenv
+from groq import Groq
 
+# Завантажуємо змінні з .env
 load_dotenv()
 
-def generate_trip_plan(origin, destination, date, flight_data):
-    api_key = os.getenv("LLM_API_KEY")
-    if not api_key:
-        return None
+# Ініціалізуємо клієнта Groq
+client = Groq(api_key=os.getenv("LLM_API_KEY"))
 
+def generate_trip_plan(origin, destination, date, flight_data):
+    prompt = f"""
+    Ти ШІ-помічник для планування подорожей. Склади маршрут.
+    Звідки: {origin}
+    Куди: {destination}
+    Дати: {date}
+    Дані про реальні рейси від API: {flight_data}
+    
+    ВАЖЛИВО: Відповідь ТІЛЬКИ у форматі JSON без жодного іншого тексту.
+    
+    ПРАВИЛА ДЛЯ РЕЙСІВ (СУВОРО):
+    1. РОЗПОДІЛИ отримані рейси між 'cheap', 'medium' та 'expensive' рівномірно. 
+    2. ОБМЕЖЕННЯ: У кожній категорії має бути РІВНО 2 рядки (один "✈️ Туди:" і один "✈️ Назад:"). НЕ БІЛЬШЕ! Ніколи не роби довгих списків з 5-10 рейсів в одній колонці.
+    3. Якщо API повернув мало рейсів, краще залиш 'expensive' порожнім ([]), але не переповнюй 'medium'.
+    4. НІКОЛИ не дублюй рейси.
+    
+    СТРУКТУРА JSON:
+    {{
+        "flights": {{
+            "cheap": ["✈️ Туди: [Дані API з ціною]", "✈️ Назад: [Дані API з ціною]"],
+            "medium": ["✈️ Туди: [Дані API з ціною]", "✈️ Назад: [Дані API з ціною]"],
+            "expensive": ["✈️ Туди: [Дані API з ціною]", "✈️ Назад: [Дані API з ціною]"]
+        }},
+        "places": ["[Локація 1]", "[Локація 2]"],
+        "tip": "[Порада]"
+    }}
+    """
+    
     try:
-        client = genai.Client(api_key=api_key)
-        
-        prompt = f"""
-        Маршрут: {origin} -> {destination}. Дата: {date}. Квитки: {flight_data}
-        
-        Поверни ТІЛЬКИ валідний JSON (без форматування ```json). Пиши максимально коротко:
-        {{
-            "flights": ["Авіакомпанія 1 від €XX", "Авіакомпанія 2 від €XX", "Авіакомпанія 3 від €XX"],
-            "places": ["Локація 1", "Локація 2", "Локація 3"],
-            "tip": "Коротка порада (до 5 слів)"
-        }}
-        """
-        
-        response = client.models.generate_content(
-            model='gemini-3.8-flash',
-            contents=prompt
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            model="qwen/qwen3.8-27b",
+            temperature=0.3, # Зменшили температуру для меншої фантазії
+            response_format={"type": "json_object"} 
         )
         
-        # Очищаємо від можливих маркерів тексту та перетворюємо в словник
-        raw_text = response.text.replace("```json", "").replace("```", "").strip()
-        return json.loads(raw_text)
+        import json
+        response_text = chat_completion.choices[0].message.content.strip()
+        return json.loads(response_text)
         
     except Exception as e:
-        print(f"Помилка ШІ: {e}")
-        return None
+        print(f"Помилка сервера Groq: {e}")
+        return {
+            "flights": {"cheap": [], "medium": [], "expensive": []},
+            "places": ["Помилка генерації"],
+            "tip": "Спробуйте ще раз."
+        }
+    
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            model="qwen/qwen3.8-27b",
+            temperature=0.5,
+            response_format={"type": "json_object"} # Гарантує повернення чистого JSON
+        )
+        
+        response_text = chat_completion.choices[0].message.content.strip()
+        return json.loads(response_text)
+        
+    except Exception as e:
+        print(f"Помилка сервера Groq: {e}")
+        return {
+            "flights": ["Перевірка рейсів тимчасово призупинена"],
+            "places": ["Очікування відновлення зв'язку з сервером"],
+            "tip": "Сервер тимчасово перевантажений запитами або сталася помилка. Зачекайте хвилину та спробуйте ще раз."
+        }
