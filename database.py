@@ -91,3 +91,49 @@ def check_email_exists(email):
     conn.close()
     
     return exists
+
+def delete_trip(trip_id):
+    conn = sqlite3.connect('travel.db') # Заміни на назву свого файлу БД
+    cursor = conn.cursor()
+    
+    cursor.execute("DELETE FROM saved_trips WHERE id = ?", (trip_id,))
+    
+    conn.commit()
+    conn.close()
+
+# 1. Функція для оновлення імені в профілі
+def update_user_name(user_id, new_name):
+    try:
+        conn = sqlite3.connect("travel.db")
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET name = ? WHERE id = ?", (new_name, user_id))
+        conn.commit()
+    except Exception as e:
+        print(f"Помилка оновлення імені: {e}")
+    finally:
+        conn.close()
+
+# 2. Функція для видалення збереженої подорожі
+def delete_saved_trip(trip_id):
+    try:
+        conn = sqlite3.connect("travel.db")
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM saved_trips WHERE id = ?", (trip_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"Помилка видалення подорожі: {e}")
+    finally:
+        conn.close()
+
+# 3. (На майбутнє) Функція для оновлення аватарки
+def update_user_avatar(user_id, avatar_path):
+    try:
+        conn = sqlite3.connect("travel.db")
+        cursor = conn.cursor()
+        # Для цього в таблиці users має бути створена колонка avatar
+        cursor.execute("UPDATE users SET avatar = ? WHERE id = ?", (avatar_path, user_id))
+        conn.commit()
+    except Exception as e:
+        print(f"Помилка оновлення аватарки: {e}")
+    finally:
+        conn.close()

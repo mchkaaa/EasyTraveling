@@ -13,8 +13,10 @@ def get_trips_view(page: ft.Page):
         try:
             conn = sqlite3.connect("travel.db")
             cursor = conn.cursor()
-            # Читаємо з нашої НОВОЇ таблиці
-            cursor.execute("SELECT origin, destination, dates, plan_data FROM saved_trips WHERE user_id = ? ORDER BY id DESC", (user_id,))
+            cursor.execute(
+                "SELECT id, origin, destination, dates, plan_data FROM saved_trips WHERE user_id = ? ORDER BY id DESC",
+                (user_id,)
+            )
             rows = cursor.fetchall()
             conn.close()
 
@@ -26,15 +28,16 @@ def get_trips_view(page: ft.Page):
                         padding=50
                     )
                 )
+                page.update()
                 return
 
             for row in rows:
-                origin, dest, dates, plan_data_str = row
+                trip_id, origin, dest, dates, plan_data_str = row
                 
                 try:
                     plan_data = json.loads(plan_data_str)
-                except:
-                    continue # Пропускаємо пошкоджені записи
+                except Exception:
+                    continue  # Пропускаємо пошкоджені записи
                 
                 # Витягуємо рейси
                 flights_data = plan_data.get("flights", {})
@@ -59,13 +62,76 @@ def get_trips_view(page: ft.Page):
                 )
 
                 tip_container = ft.Container(
-                    bgcolor=ft.colors.AMBER_100, padding=15, border_radius=10,
-                    content=ft.Row([ft.Icon(ft.icons.LIGHTBULB, color=ft.colors.AMBER_700), ft.Text(plan_data.get("tip", ""), color=ft.colors.BLACK87, expand=True)])
+                    bgcolor=ft.colors.AMBER_100,
+                    padding=15,
+                    border_radius=10,
+                    content=ft.Row([
+                        ft.Icon(ft.icons.LIGHTBULB, color=ft.colors.AMBER_700),
+                        ft.Text(plan_data.get("tip", ""), color=ft.colors.BLACK87, expand=True)
+                    ])
                 )
 
-                # Створюємо картку, що розгортається вниз (щоб екран не був надто довгим)
+                # --- ЛОГІКА ВІКНА ПІДТВЕРДЖЕННЯ ВИДАЛЕННЯ ---
+                def make_delete_handler(tid):
+                    def delete_click(e):
+                        def close_dlg(e):
+                            if hasattr(page, "close"):
+                                page.close(confirm_dialog)
+                            else:
+                                confirm_dialog.open = False
+                                page.update()
+
+                        def confirm_delete(e):
+                            conn = sqlite3.connect("travel.db")
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM saved_trips WHERE id = ?", (tid,))
+                            conn.commit()
+                            conn.close()
+                            
+                            close_dlg(e)
+                            load_trips()  # Оновлюємо список турів
+
+                        confirm_dialog = ft.AlertDialog(
+                            modal=True,
+                            title=ft.Text("Підтвердження"),
+                            content=ft.Text("Ви точно хочете видалити цю подорож?"),
+                            actions=[
+                                ft.TextButton("Скасувати", on_click=close_dlg),
+                                ft.TextButton("Видалити", on_click=confirm_delete, style=ft.ButtonStyle(color=ft.colors.RED)),
+                            ],
+                            actions_alignment=ft.MainAxisAlignment.END,
+                        )
+                        
+                        # Відкриття діалогу з підтримкою нових і старих версій Flet
+                        if hasattr(page, "open"):
+                            page.open(confirm_dialog)
+                        else:
+                            page.dialog = confirm_dialog
+                            confirm_dialog.open = True
+                            page.update()
+
+                    return delete_click
+
+                delete_btn = ft.IconButton(
+                    icon=ft.icons.DELETE_OUTLINE,
+                    icon_color=ft.colors.RED_400,
+                    tooltip="Видалити подорож",
+                    on_click=make_delete_handler(trip_id)
+                )
+
+                # Розміщуємо заголовок та кнопку в одному Row, щоб ExpansionTile не блокував натискання
+                tile_title = ft.Row(
+                    controls=[
+                        ft.Text(f"{origin} ➔ {dest}", weight=ft.FontWeight.BOLD, size=18, expand=True),
+                        delete_btn
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER
+                )
+
+                # Створюємо картку, що розгортається вниз
                 trip_card = ft.ExpansionTile(
-                    title=ft.Text(f"{origin} ➔ {dest}", weight=ft.FontWeight.BOLD, size=18),
+                    title=tile_title,
                     subtitle=ft.Text(f"Дати: {dates}", color=ft.colors.BLUE_700),
                     leading=ft.Icon(ft.icons.MAP, color=ft.colors.BLUE),
                     controls_padding=20,
@@ -83,6 +149,8 @@ def get_trips_view(page: ft.Page):
 
         except Exception as e:
             trips_list.controls.append(ft.Text(f"Помилка БД: {e}", color=ft.colors.RED))
+        
+        page.update()
 
     # Викликаємо завантаження при відкритті сторінки
     load_trips()

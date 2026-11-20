@@ -109,3 +109,5 @@ def check_city_exists(city_name):
         return False
     except Exception:
         return False
+
+
